@@ -1,0 +1,12 @@
+{
+  "name": "camer-laboratorio-a1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node servidor.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "chameleon-ultra.js": "0.4.13"
+  }
+}

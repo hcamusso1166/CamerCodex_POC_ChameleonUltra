@@ -1,0 +1,16 @@
+:root { color-scheme: light; font-family: "Segoe UI", sans-serif; background: #f1f4f3; color: #192c30; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(40rem, 100%); margin: 0 auto; padding: clamp(1rem, 5vw, 3rem); }
+header p, .etiqueta { color: #415c5a; font-size: .85rem; letter-spacing: .06em; }
+h1 { margin: .4rem 0 1.6rem; font-size: clamp(2rem, 6vw, 3rem); }
+section { background: white; border: 1px solid #cad8d4; padding: 1.3rem; margin-bottom: 1rem; border-radius: .65rem; }
+h2 { font-size: 1.15rem; margin: 0 0 1rem; }
+label, input, output { display: block; }
+input { width: 100%; font: inherit; padding: .65rem; margin: .5rem 0 1rem; }
+button { background: #135c50; color: white; border: 1px solid #135c50; border-radius: .3rem; padding: .65rem 1rem; font: inherit; cursor: pointer; }
+button.secundario { color: #135c50; background: white; }
+button:disabled { opacity: .5; cursor: default; }
+#info { white-space: pre-line; overflow-wrap: anywhere; font-size: .9rem; }
+output { font: 600 2.4rem monospace; letter-spacing: .12em; }
+#error { color: #8a2828; }

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camer Codex · Lector A1</title>
+  <link rel="stylesheet" href="/estilo.css">
+  <script src="/sdk.js" defer></script>
+  <script src="/ble.js" defer></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+<main>
+  <header><p>CAMER CODEX® / Laboratorio A1</p><h1>Lector Camer Deck</h1></header>
+  <section aria-labelledby="equipo">
+    <h2 id="equipo">Chameleon Ultra Compact</h2>
+    <p id="estado" role="status">Desconectado</p>
+    <p id="info"></p>
+    <button id="conectar" disabled>Conectar</button>
+    <button id="desconectar" class="secundario" disabled>Desconectar</button>
+  </section>
+  <section aria-labelledby="tarjeta">
+    <h2 id="tarjeta">Lectura de tarjeta</h2>
+    <label for="clave">Clave A autorizada · 12 dígitos hexadecimales</label>
+    <input id="clave" type="password" maxlength="12" autocomplete="off" spellcheck="false">
+    <button id="leer" disabled>Leer tarjeta</button>
+    <p class="etiqueta">Identificador · Sector 0 / Bloque 1</p>
+    <output id="resultado" aria-label="Identificador de tarjeta">—</output>
+  </section>
+  <p id="error" role="alert"></p>
+</main>
+</body>
+</html>
