@@ -28,10 +28,11 @@ export async function comando(etapa, operacion) {
       motivo = 'desconexión BLE'
     } else if ([error?.cause?.name, error?.cause?.cause?.name].includes('NotFoundError')) {
       motivo = 'selección cancelada o dispositivo ausente'
-    } else if (['Adaptador BLE', 'Conexión GATT', 'GET_APP_VERSION (1000)'].includes(etapa) && error?.message) {
-      motivo = error.message
     }
-    throw new Error(etapa + ' · ' + motivo)
+    throw Object.assign(new Error(etapa + ' · ' + motivo), {
+      status: estado, timeout: !Number.isInteger(estado) && /timeout/i.test(error?.message),
+      transporte: !Number.isInteger(estado) && !/^buf must be a Buffer with length of /.test(error?.message)
+    })
   }
 }
 
@@ -64,12 +65,20 @@ export async function preparar(ultra, sdk, vigente, informar) {
     if (await modo() !== sdk.DeviceMode.READER) throw new Error('El dispositivo no confirmó el modo lector.')
   }
   vigente()
+  return capacidades
 }
 
 export async function leer(ultra, sdk, clave, vigente) {
   vigente()
-  const tarjetas = await comando('HF14A_SCAN (2000)', () => ultra.cmdHf14aScan())
+  let tarjetas
+  try {
+    tarjetas = await comando('HF14A_SCAN (2000)', () => ultra.cmdHf14aScan())
+  } catch (error) {
+    if (error.status !== 1) throw error
+    tarjetas = []
+  }
   vigente()
+  if (tarjetas.length === 0) return null
   if (tarjetas.length !== 1) throw new Error('Presentá una sola tarjeta Camer Deck.')
   if (tarjetas[0].sak?.length !== 1 || tarjetas[0].sak[0] !== 0x08) {
     throw new Error('La selección no corresponde a MIFARE Classic 1K (SAK 08).')

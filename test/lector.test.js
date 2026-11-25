@@ -52,7 +52,10 @@ test('una respuesta tardía se descarta tras la desconexión', async () => {
     if (!conectado) throw new Error('Desconectado')
   }), /Desconectado/)
 })
-for (const tarjetas of [[], [{ sak: [0] }], [{ sak: [8] }, { sak: [8] }]]) {
+test('escaneo sin tarjeta devuelve ausencia', async () => {
+  assert.equal(await leer({ cmdHf14aScan: async () => [] }, sdk, null, vigente), null)
+})
+for (const tarjetas of [[{ sak: [0] }], [{ sak: [8] }, { sak: [8] }]]) {
   test('selección rechazada ' + JSON.stringify(tarjetas), async () => {
     await assert.rejects(leer({ cmdHf14aScan: async () => tarjetas }, sdk, null, vigente), /tarjeta|SAK/)
   })

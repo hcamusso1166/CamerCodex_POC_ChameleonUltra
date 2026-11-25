@@ -15,19 +15,29 @@
   <section aria-labelledby="equipo">
     <h2 id="equipo">Chameleon Ultra Compact</h2>
     <p id="estado" role="status">Desconectado</p>
-    <p id="info"></p>
+    <p id="bateria" role="status">Batería no disponible</p>
     <button id="conectar" disabled>Conectar</button>
     <button id="desconectar" class="secundario" disabled>Desconectar</button>
   </section>
   <section aria-labelledby="tarjeta">
     <h2 id="tarjeta">Lectura de tarjeta</h2>
-    <label for="clave">Clave A autorizada · 12 dígitos hexadecimales</label>
-    <input id="clave" type="password" maxlength="12" autocomplete="off" spellcheck="false">
-    <button id="leer" disabled>Leer tarjeta</button>
-    <p class="etiqueta">Identificador · Sector 0 / Bloque 1</p>
+    <p id="lector" role="status">Detenido</p>
+    <button id="leer" disabled>Iniciar lectura continua</button>
+    <p class="etiqueta">Última carta leída</p>
     <output id="resultado" aria-label="Identificador de tarjeta">—</output>
+    <p>Lecturas aceptadas · <span id="contador">0</span></p>
   </section>
   <p id="error" role="alert"></p>
+  <details><summary>Opciones de lectura</summary>
+    <label for="clave">Clave A autorizada · 12 dígitos hexadecimales</label>
+    <input id="clave" type="password" value="FFFFFFFFFFFF" maxlength="12" autocomplete="off" spellcheck="false">
+    <label for="pausa">Pausa entre consultas (ms)</label>
+    <input id="pausa" type="number" min="250" max="400" value="320">
+  </details>
+  <details><summary>Diagnóstico</summary>
+    <p id="permisos">Inventario de permisos no disponible.</p>
+    <p id="info"></p>
+  </details>
 </main>
 </body>
 </html>
