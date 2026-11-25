@@ -1,0 +1,15 @@
+# Contratos y dependencias
+
+Este inventario guía la auditoría de la Entrega 0. La Bitácora identifica los componentes y ADR-GLOBAL-001 exige versionar y probar los protocolos compartidos. Las fuentes normativas exactas de CamerPacket v1 y del protocolo BLE aplicable al recorrido de la POC quedan pendientes de verificación. [Inventario maestro](https://github.com/hcamusso1166/CamerCodex_Bitacora_Maestra/blob/main/BITACORA_MAESTRA.md) · [ADR-GLOBAL-001](https://github.com/hcamusso1166/CamerCodex_Bitacora_Maestra/blob/main/docs/adr/ADR-GLOBAL-001-integridad-ecosistema.md)
+
+| Contrato o dependencia | Qué verificar antes de programar | Evidencia requerida |
+| --- | --- | --- |
+| Lectura de cartas | Identificar la interfaz de lectura disponible con el firmware declarado y la regla documentada que relaciona los datos del bloque con la carta. | Fuente versionada y cotejo con los tres casos manuales del [README](../README.md). |
+| CamerPacket v1 | Identificar productor, consumidor, especificación vigente, representación, campos obligatorios y tratamiento de entradas inválidas. | Ruta y revisión exactas, con ejemplos de referencia aceptados por el consumidor. |
+| Protocolo BLE existente | Contrastar roles, servicios, características, operaciones y secuencia de intercambio del emisor y del receptor. Determinar si el Chameleon puede participar con su firmware actual. | Fuentes versionadas de ambos extremos, dirección del intercambio y diferencias por resolver. |
+| MrCamerDev 1.0 | Localizar el comportamiento de referencia de lectura, paquete y transporte. Identificar la variante de origen y distinguir el repositorio de trabajo histórico de la línea SHOW y de E1 REQA/WUPA. | Referencia de solo lectura con ruta, rama y commit. Registrar por separado la evidencia del firmware físico disponible. |
+| Camer Codex | Localizar el consumo de paquetes y sus dependencias por rutina y línea de aplicación. Delimitar qué comportamiento debe observar la aplicación POC aislada. | Referencia del consumidor y matriz de impacto. Mantener separadas la comercial y la experimental. |
+
+ADR-BLE-001 regula la vinculación persistente y la reconexión. Prevé centralizar la gestión en Camer Device Manager, identificar la unidad y comprobar GATT y estado operativo antes de anunciar «Conectado». Distingue pairing, bonding, permiso del navegador y conexión activa. La compatibilidad de Web Bluetooth en Android, la persistencia de permisos y las decisiones abiertas de recuperación requieren evaluación. El ADR por sí solo no especifica el formato del paquete ni acredita interoperabilidad. [ADR-BLE-001](https://github.com/hcamusso1166/CamerCodex_Bitacora_Maestra/blob/main/docs/adr/ADR-BLE-001-vinculacion-persistente.md)
+
+La auditoría debe registrar para cada interfaz su versión, fuentes, ejemplos, dependientes y discrepancias. Si fuentes y ejemplos difieren, elevar el punto a Coperfil y al responsable antes de implementar. Queda prohibido suplir vacíos inventando campos, UUID, comandos o codificaciones, o modificar los contratos existentes.
