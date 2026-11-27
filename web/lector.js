@@ -36,10 +36,10 @@ export async function comando(etapa, operacion) {
   }
 }
 
-export async function preparar(ultra, sdk, vigente, informar) {
+export async function preparar(ultra, sdk, vigente, informar, ejecutar = comando) {
   const consultar = (nombre, funcion) => {
     vigente()
-    return comando(nombre, funcion)
+    return ejecutar(nombre, funcion)
   }
   if (ultra.isDfu()) throw new Error('Equipo en modo DFU. Se requiere el modo de aplicación.')
   const version = await consultar('GET_APP_VERSION (1000)', () => ultra.cmdGetAppVersion())
@@ -68,11 +68,11 @@ export async function preparar(ultra, sdk, vigente, informar) {
   return capacidades
 }
 
-export async function leer(ultra, sdk, clave, vigente) {
+export async function leer(ultra, sdk, clave, vigente, ejecutar = comando) {
   vigente()
   let tarjetas
   try {
-    tarjetas = await comando('HF14A_SCAN (2000)', () => ultra.cmdHf14aScan())
+    tarjetas = await ejecutar('HF14A_SCAN (2000)', () => ultra.cmdHf14aScan())
   } catch (error) {
     if (error.status !== 1) throw error
     tarjetas = []
@@ -83,7 +83,7 @@ export async function leer(ultra, sdk, clave, vigente) {
   if (tarjetas[0].sak?.length !== 1 || tarjetas[0].sak[0] !== 0x08) {
     throw new Error('La selección no corresponde a MIFARE Classic 1K (SAK 08).')
   }
-  const bloque = await comando('MF1_READ_ONE_BLOCK (2008)', () =>
+  const bloque = await ejecutar('MF1_READ_ONE_BLOCK (2008)', () =>
     ultra.cmdMf1ReadBlock({ block: 1, keyType: sdk.Mf1KeyType.KEY_A, key: clave }))
   vigente()
   return interpretar(bloque)

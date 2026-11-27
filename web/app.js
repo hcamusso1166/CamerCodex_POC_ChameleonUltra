@@ -1,4 +1,5 @@
 import { comando, leer, preparar } from './lector.js'
+import { Diagnostico } from './diagnostico.js'
 
 const el = id => document.getElementById(id)
 const sdk = globalThis.ChameleonUltraJS
@@ -7,6 +8,55 @@ const disponible = Boolean(globalThis.isSecureContext && bluetooth && sdk?.Webbl
 const intervaloBateria = 45000
 let sesion = null
 let aceptadas = 0
+let ultimaSesion
+let ultimoCierre = ''
+let equipoAnterior
+let relojPanel
+
+const periodica = () => el('periodica').value !== 'no'
+const gatt = s => s?.device ? (s.device.gatt?.connected ? 'conectado' : 'desconectado') : 'sin comprobar'
+function mostrar() {
+  const s = ultimaSesion
+  if (!s) return
+  el('resumen').textContent = s.diag.resumen(el('estado').textContent, gatt(s), periodica(), ultimoCierre)
+  el('registro').textContent = s.diag.eventos.join('\n')
+}
+el('diagnostico').ontoggle = () => {
+  clearInterval(relojPanel)
+  if (el('diagnostico').open) {
+    mostrar()
+    relojPanel = setInterval(mostrar, 1000)
+  }
+}
+el('copiar').onclick = async () => {
+  mostrar()
+  try {
+    await navigator.clipboard.writeText(el('resumen').textContent + '\n\n' + el('registro').textContent)
+    el('copia').textContent = 'Diagnóstico copiado.'
+  } catch {
+    el('copia').textContent = 'Seleccioná el resumen y los eventos para copiarlos manualmente.'
+  }
+}
+
+function evento(s, texto, indicio = false) {
+  s.diag.anotar(texto, gatt(s), indicio)
+}
+async function consultar(s, nombre, operacion) {
+  s.diag.operacion = nombre
+  evento(s, 'Inicio ' + nombre)
+  try {
+    const valor = await comando(nombre, operacion)
+    if (!s.cerrando) s.diag.confirmarRespuesta()
+    evento(s, 'Fin ' + nombre + (s.cerrando ? ' · respuesta descartada' : ' · respuesta válida'))
+    return valor
+  } catch (error) {
+    const respondio = Number.isInteger(error.status)
+    if (respondio && !s.cerrando) s.diag.confirmarRespuesta()
+    const resultado = respondio ? 'respuesta con estado ' + error.status : error.timeout ? 'timeout' : 'fallo'
+    evento(s, 'Fin ' + nombre + ' · ' + resultado, error.transporte)
+    throw error
+  }
+}
 
 function controles() {
   el('conectar').disabled = !disponible || Boolean(sesion)
@@ -22,9 +72,11 @@ function vigente(s) {
   }
 }
 
-async function cerrar(s, mensaje = '', fallo = false) {
+async function cerrar(s, mensaje = '', origen = 'usuario') {
   if (!s || sesion !== s || s.cerrando) return
   s.cerrando = true
+  if (origen === 'usuario') evento(s, 'Cierre solicitado por el usuario', true)
+  if (origen === 'aplicación') evento(s, 'Cierre iniciado por la aplicación', true)
   s.lista = false
   s.lectura = null
   clearTimeout(s.timer)
@@ -34,31 +86,39 @@ async function cerrar(s, mensaje = '', fallo = false) {
   el('bateria').textContent = 'Batería no disponible'
   el('error').textContent = mensaje
   try {
-    if (s.ultra.isConnected()) await s.ultra.disconnect()
+    if (!['SDK', 'GATT'].includes(origen) && s.ultra.isConnected()) await s.ultra.disconnect()
   } catch {
     // El enlace puede haberse perdido antes de completar el cierre del SDK.
   } finally {
-    s.adaptador.device?.gatt?.disconnect()
+    if (s.device?.gatt?.connected) s.device.gatt.disconnect()
+    s.diag.fin ??= performance.now()
+    ultimoCierre = origen + ' · ' + (s.diag.primerIndicio || 'sin indicio previo')
+    const duracion = s.diag.conexion === null ? 'sin conexión confirmada' :
+      Math.round(s.diag.fin - s.diag.conexion) + ' ms desde conexión'
+    evento(s, 'Sesión cerrada · ' + origen + ' · ' + duracion)
     sesion = null
-    el('estado').textContent = fallo ? 'Error · desconectado' : 'Desconectado'
+    el('estado').textContent = origen === 'aplicación' ? 'Error · desconectado' : 'Desconectado'
+    mostrar()
     controles()
   }
 }
 
 async function bateria(s) {
   try {
-    const { level, voltage } = await comando('GET_BATTERY_INFO (1025)', () => s.ultra.cmdGetBatteryInfo())
+    const { level, voltage } = await consultar(s, 'GET_BATTERY_INFO (1025)', () => s.ultra.cmdGetBatteryInfo())
     vigente(s)
     if (!Number.isInteger(level) || level < 0 || level > 100 || !Number.isInteger(voltage) || voltage <= 0) {
       throw new Error('Medición inválida')
     }
-    el('bateria').textContent = level + ' % estimado · ' + voltage + ' mV'
+    el('bateria').textContent = s.diag.bateria = level + ' % estimado · ' + voltage + ' mV'
   } catch (error) {
+    if (error.transporte) throw error
     vigente(s)
-    // El SDK correlaciona por comando. Tras timeout no se repite 1025 en esta sesión.
-    if (error.timeout || [0x67, 0x69].includes(error.status)) s.proximaBateria = Infinity
-    else if (error.transporte) throw error
-    el('bateria').textContent = 'Batería no disponible'
+    if ([0x67, 0x69].includes(error.status)) {
+      s.admiteBateria = false
+      s.proximaBateria = Infinity
+    }
+    el('bateria').textContent = s.diag.bateria = 'Batería no disponible'
   }
 }
 
@@ -74,7 +134,7 @@ async function ciclo(s) {
   try {
     vigente(s)
     if (Date.now() >= s.proximaBateria) {
-      s.proximaBateria = Date.now() + intervaloBateria
+      s.proximaBateria = periodica() ? Date.now() + intervaloBateria : Infinity
       await bateria(s)
     }
     vigente(s)
@@ -86,7 +146,7 @@ async function ciclo(s) {
     }
     const clave = sdk.Buffer.from(el('clave').value, 'hex')
     try {
-      const carta = await leer(s.ultra, sdk, clave, comprobar)
+      const carta = await leer(s.ultra, sdk, clave, comprobar, s.consultar)
       comprobar()
       el('error').textContent = ''
       el('lector').textContent = carta ? 'Leyendo · tarjeta presente' : 'Leyendo · esperando tarjeta'
@@ -110,18 +170,31 @@ async function ciclo(s) {
       clave.fill(0)
     }
   } catch (error) {
-    if (error.transporte) await cerrar(s, error.message + ' Volvé a conectar.', true)
+    if (error.transporte) await cerrar(s, error.message + ' Volvé a conectar.', 'aplicación')
   } finally {
     s.ocupado = false
     programar(s, s.lectura?.pausa ?? (s.proximaBateria - Date.now()))
   }
 }
 
+el('periodica').onchange = () => {
+  const s = sesion
+  if (!s) return
+  evento(s, 'Batería periódica ' + (periodica() ? 'activada' : 'desactivada'))
+  if (!s.lista || !s.admiteBateria) return
+  s.proximaBateria = periodica() ? Date.now() + intervaloBateria : Infinity
+  if (!s.ocupado && !s.lectura) programar(s, s.proximaBateria - Date.now())
+}
+
 el('conectar').onclick = async () => {
   if (sesion) return
   const ultra = new sdk.ChameleonUltra()
   const adaptador = new sdk.WebbleAdapter()
-  const s = sesion = { ultra, adaptador, proximaBateria: Infinity }
+  ultimaSesion?.device?.removeEventListener('gattserverdisconnected', ultimaSesion.alPerderGatt)
+  const s = sesion = ultimaSesion = { ultra, adaptador, diag: new Diagnostico(), proximaBateria: Infinity }
+  s.consultar = (nombre, fn) => consultar(s, nombre, fn)
+  evento(s, 'Inicio de sesión · batería periódica ' + (periodica() ? 'activada' : 'desactivada'))
+  el('copia').textContent = ''
   controles()
   el('info').textContent = el('error').textContent = ''
   el('estado').textContent = 'Buscando dispositivo'
@@ -129,39 +202,64 @@ el('conectar').onclick = async () => {
   adaptador.bluetooth = {
     getAvailability: () => bluetooth.getAvailability(),
     requestDevice: async opciones => {
-      const device = await bluetooth.requestDevice(opciones)
+      const reutilizar = el('reutilizar').checked && equipoAnterior
+      evento(s, reutilizar ? 'Solicitud de dispositivo autorizado' : 'Solicitud de dispositivo al navegador')
+      const device = reutilizar ? equipoAnterior : await bluetooth.requestDevice(opciones)
+      s.device = device
+      s.alPerderGatt = () => {
+        evento(s, 'gattserverdisconnected', true)
+        s.diag.fin ??= performance.now()
+        if (s.lista && !s.cerrando) void cerrar(s, 'Desconexión GATT. Volvé a conectar.', 'GATT')
+        mostrar()
+      }
+      device.addEventListener('gattserverdisconnected', s.alPerderGatt, { once: true })
       el('estado').textContent = 'Conectando'
       return device
     }
   }
   ultra.emitter.on('disconnected', () => {
-    if (s.lista) void cerrar(s, 'Desconexión BLE. Volvé a conectar.')
+    evento(s, 'SDK disconnected', true)
+    if (s.lista && !s.cerrando) void cerrar(s, 'Desconexión notificada por el SDK. Volvé a conectar.', 'SDK')
+    mostrar()
   })
   try {
+    ultra.addHook('disconnect', async (_contexto, siguiente) => {
+      evento(s, 'SDK comienza disconnect', true)
+      return siguiente()
+    })
     await comando('Adaptador BLE', () => ultra.use(adaptador))
     await comando('Conexión GATT', () => ultra.connect())
+    if (s.diag.primerIndicio) throw new Error('Conexión interrumpida durante el inicio.')
+    vigente(s)
+    s.diag.conexion = performance.now()
+    evento(s, 'Conexión GATT establecida y verificada')
     const capacidades = await preparar(ultra, sdk, () => vigente(s), datos => {
-      el('info').textContent = (adaptador.device.name ?? 'Chameleon') + '\n' + datos
-    })
+      if (sesion === s) el('info').textContent = datos
+    }, s.consultar)
+    evento(s, 'Modo lector confirmado')
+    equipoAnterior = s.device
     let suspension = 'no disponible'
     if (capacidades.has(1039)) {
       try {
-        suspension = await comando('GET_SLEEP_TIMEOUT (1039)', () => ultra.cmdGetSleepTimeout()) + ' s'
+        suspension = await s.consultar('GET_SLEEP_TIMEOUT (1039)', () => ultra.cmdGetSleepTimeout()) + ' s'
       } catch (error) {
         vigente(s)
-        if (error.transporte && !error.timeout) throw error
+        if (error.transporte) throw error
       }
     }
     vigente(s)
     el('info').textContent += '\nSuspensión configurada: ' + suspension
-    s.proximaBateria = capacidades.has(1025) ? 0 : Infinity
+    s.diag.suspension = suspension
+    evento(s, 'Suspensión configurada · ' + suspension)
+    s.admiteBateria = capacidades.has(1025)
+    s.proximaBateria = s.admiteBateria ? 0 : Infinity
     s.lista = true
     el('estado').textContent = 'Conectado'
     el('lector').textContent = 'Listo'
     controles()
     await ciclo(s)
   } catch (error) {
-    await cerrar(s, error.message, true)
+    await cerrar(s, error.message, 'aplicación')
   }
 }
 
@@ -195,7 +293,8 @@ controles()
 if (!disponible) el('error').textContent = 'Se requiere Chrome con Web Bluetooth, contexto seguro y SDK local cargado.'
 if (disponible && bluetooth.getDevices) {
   bluetooth.getDevices().then(devices => {
-    const nombres = devices.map(d => d.name).filter(n => /chameleon|^C[UL]-/i.test(n ?? ''))
-    el('permisos').textContent = nombres.length ? 'Autorizados por nombre: ' + nombres.join(', ') : 'Sin Chameleon identificable por nombre.'
+    const compatibles = devices.filter(d => /^ChameleonUltra$/i.test(d.name ?? ''))
+    if (compatibles.length === 1) equipoAnterior ??= compatibles[0]
+    el('permisos').textContent = 'Equipos autorizados con nombre ChameleonUltra · ' + compatibles.length
   }).catch(() => {})
 }

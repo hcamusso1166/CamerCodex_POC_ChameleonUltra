@@ -14,3 +14,6 @@ button:disabled { opacity: .5; cursor: default; }
 #info { white-space: pre-line; overflow-wrap: anywhere; font-size: .9rem; }
 output { font: 600 2.4rem monospace; letter-spacing: .12em; }
 #error { color: #8a2828; }
+#registro, #resumen { white-space: pre-wrap; overflow-wrap: anywhere; }
+#registro { max-height: 22rem; overflow: auto; }
+#reutilizar { display: inline; width: auto; }

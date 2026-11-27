@@ -34,9 +34,16 @@
     <label for="pausa">Pausa entre consultas (ms)</label>
     <input id="pausa" type="number" min="250" max="400" value="320">
   </details>
-  <details><summary>Diagnóstico</summary>
+  <details id="diagnostico"><summary>Diagnóstico</summary>
+    <label for="periodica">Actualizar batería periódicamente</label>
+    <select id="periodica"><option value="si">Activado</option><option value="no">Desactivado</option></select>
+    <label for="reutilizar"><input id="reutilizar" type="checkbox"> Usar el último Compact verificado o el único ChameleonUltra autorizado</label>
     <p id="permisos">Inventario de permisos no disponible.</p>
     <p id="info"></p>
+    <pre id="resumen"></pre>
+    <pre id="registro" aria-label="Últimos eventos"></pre>
+    <button id="copiar" type="button">Copiar diagnóstico</button>
+    <p id="copia" role="status"></p>
   </details>
 </main>
 </body>

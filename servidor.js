@@ -6,6 +6,7 @@ const sdk = './node_modules/chameleon-ultra.js/dist/'
 const archivos = new Map([
   ['/', './web/index.html'], ['/estilo.css', './web/estilo.css'],
   ['/app.js', './web/app.js'], ['/lector.js', './web/lector.js'],
+  ['/diagnostico.js', './web/diagnostico.js'],
   ['/sdk.js', sdk + 'index.global.js'], ['/ble.js', sdk + 'plugin/WebbleAdapter.global.js']
 ])
 async function servir(req, res) {

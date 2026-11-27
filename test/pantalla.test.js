@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import * as sdk from 'chameleon-ultra.js'
+import WebbleAdapter from 'chameleon-ultra.js/plugin/WebbleAdapter'
 
 const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8')
 let numero = 0
@@ -24,17 +25,24 @@ async function pantalla(t, opciones = {}) {
   let idTimer = 0
   let ultra
   const llamadas = []
-  const device = { name: 'ChameleonUltra', gatt: { connected: false, disconnect() { this.connected = false } } }
+  const device = Object.assign(new EventTarget(), { name: 'ChameleonUltra-PRIVADO',
+    id: 'ID-PRIVADO', gatt: { connected: false, disconnect() { this.connected = false } } })
+  let solicitudes = 0
+  let copiado
   class Ultra {
     emitter = new EventEmitter()
     constructor() { ultra = this }
     async use(a) { this.a = a }
+    addHook(nombre, fn) { if (nombre === 'disconnect') this.antesDeCerrar = fn }
     async connect() {
       this.a.device = await this.a.bluetooth.requestDevice({})
       device.gatt.connected = true
     }
     isConnected() { return device.gatt.connected }
-    async disconnect() { device.gatt.disconnect(); this.emitter.emit('disconnected') }
+    async disconnect() { await this.antesDeCerrar({}, async () => {
+      device.gatt.disconnect()
+      this.emitter.emit('disconnected')
+    }) }
     isDfu() { return false }
     async cmdGetAppVersion() { return '2.1' }
     async cmdGetDeviceModel() { return sdk.DeviceModel.ULTRA }
@@ -54,10 +62,31 @@ async function pantalla(t, opciones = {}) {
     }
     async cmdGetBatteryInfo() { llamadas.push('batería'); return opciones.bateria() }
   }
-  const bluetooth = { requestDevice: async () => device, getDevices: async () => [device] }
+  // En el ensayo de integración sólo se simulan la radio y los comandos de preparación.
+  class UltraConTransporteReal extends sdk.ChameleonUltra {
+    constructor() {
+      super()
+      ultra = this
+      for (const nombre of Object.getOwnPropertyNames(Ultra.prototype).filter(n => n.startsWith('cmd'))) {
+        this[nombre] = Ultra.prototype[nombre]
+      }
+    }
+  }
+  if (opciones.sdkReal) {
+    device.gatt.connected = true
+    const uuid = n => '6e40000' + n + '-b5a3-f393-e0a9-e50e24dcca9e'
+    const tx = Object.assign(new EventTarget(), { uuid: uuid(3), async startNotifications() {} })
+    device.gatt.getPrimaryServices = async () => [
+      { uuid: uuid(1), getCharacteristics: async () => [tx, { uuid: uuid(2) }] }
+    ]
+  }
+  const bluetooth = { getAvailability: async () => true,
+    requestDevice: async () => { solicitudes++; return device }, getDevices: async () => [device] }
   for (const [nombre, value] of Object.entries({
-    isSecureContext: true, navigator: { bluetooth }, document: { getElementById: el },
-    ChameleonUltraJS: { ...sdk, ChameleonUltra: Ultra, WebbleAdapter: class {} },
+    isSecureContext: true, navigator: { bluetooth, clipboard: { writeText: async v => { copiado = v } } },
+    document: { getElementById: el },
+    ChameleonUltraJS: { ...sdk, ChameleonUltra: opciones.sdkReal ? UltraConTransporteReal : Ultra,
+      WebbleAdapter: opciones.sdkReal ? WebbleAdapter : class {} },
     setTimeout: (fn, ms) => { timers.set(++idTimer, { fn, ms }); return idTimer },
     clearTimeout: id => timers.delete(id)
   })) {
@@ -69,10 +98,12 @@ async function pantalla(t, opciones = {}) {
   await import('../web/app.js?ensayo=' + ++numero)
   assert.equal(el('leer').disabled, true)
   const click = id => el(id).onclick()
+  if (opciones.periodica === false) el('periodica').value = 'no'
   await click('conectar')
-  assert.equal(el('estado').textContent, 'Conectado')
+  if (!opciones.falloInicial) assert.equal(el('estado').textContent, 'Conectado')
   assert.match(el('info').textContent, /8 s/)
-  return { el, click, llamadas, timers, get ultra() { return ultra },
+  return { el, click, llamadas, timers, device, get solicitudes() { return solicitudes },
+    async informe() { await click('copiar'); return copiado }, get ultra() { return ultra },
     avanzar: ms => { reloj += ms },
     async siguiente() {
       assert.equal(timers.size, 1)
@@ -153,6 +184,7 @@ test('timeout del SDK exige nueva sesión y aísla la respuesta tardía', async 
   const anterior = p.ultra
   await p.click('leer')
   assert.match(p.el('error').textContent, /tiempo de espera/)
+  assert.match(p.el('registro').textContent, /timeout.*GATT conectado[\s\S]*Cierre iniciado por la aplicación/)
   assert.equal(p.timers.size, 0)
   await p.click('conectar')
   anterior.emitter.emit('resp', { cmd: 2000 })
@@ -185,12 +217,80 @@ for (const [nombre, status] of [['sin capacidad', null], ['comando rechazado', 0
   })
 }
 
-test('timeout de batería conserva la lectura y evita repetir 1025 en la sesión', async t => {
-  const p = await pantalla(t, { bateria() { throw new Error('read resp timeout (5000ms)') } })
+test('timeout de batería inicial inhibe todos los comandos de la sesión', async t => {
+  const p = await pantalla(t, { falloInicial: true, bateria() { throw new Error('read resp timeout (5000ms)') } })
+  assert.equal(p.el('leer').disabled, true)
+  assert.equal(p.timers.size, 0)
+  assert.deepEqual(p.llamadas, ['batería'])
+  assert.match(await p.informe(), /1025\) · timeout · GATT conectado/)
+})
+
+test('GATT espontáneo precede a SDK y conserva el primer indicio', async t => {
+  const p = await pantalla(t)
+  p.device.gatt.disconnect()
+  p.device.dispatchEvent(new Event('gattserverdisconnected'))
+  p.ultra.emitter.emit('disconnected')
+  const informe = await p.informe()
+  assert.match(informe, /Primer indicio observable · [^\n]*gattserverdisconnected/)
+  assert.match(p.el('registro').textContent, /gattserverdisconnected[\s\S]*SDK disconnected/)
+  assert.doesNotMatch(informe, /Cierre iniciado por la aplicación/)
+})
+
+test('WebbleAdapter 0.4.13 propaga un corte GATT al lector real del SDK', async t => {
+  const p = await pantalla(t, { sdkReal: true })
+  const aviso = new Promise(resolve => p.ultra.emitter.once('disconnected', resolve))
+  p.device.gatt.disconnect()
+  p.device.dispatchEvent(new Event('gattserverdisconnected'))
+  await aviso
+  await p.informe()
+  assert.match(p.el('registro').textContent, /gattserverdisconnected[\s\S]*SDK comienza disconnect[\s\S]*SDK disconnected/)
+  assert.equal(p.el('conectar').disabled, false)
+})
+
+test('timeout cuando GATT ya está caído conserva esa muestra', async t => {
+  const p = await pantalla(t, { scan() {
+    p.device.gatt.disconnect()
+    throw new Error('read resp timeout')
+  } })
+  await p.click('leer')
+  assert.match(await p.informe(), /timeout · GATT desconectado/)
+  assert.equal(p.timers.size, 0)
+})
+
+test('usuario, aviso SDK y reconexión explícita al equipo autorizado', async t => {
+  const p = await pantalla(t)
+  await p.click('desconectar')
+  assert.match(p.el('registro').textContent, /Cierre solicitado por el usuario[\s\S]*SDK disconnected/)
+  p.el('reutilizar').checked = true
+  await p.click('conectar')
+  assert.equal(p.solicitudes, 1)
+  assert.match(await p.informe(), /Primer indicio observable · ninguno/)
+  assert.match(p.el('registro').textContent, /Solicitud de dispositivo autorizado/)
+  p.ultra.emitter.emit('disconnected')
+  assert.match(await p.informe(), /Primer indicio observable · [^\n]*SDK disconnected · GATT conectado/)
+})
+
+test('batería desactivada conserva la consulta inicial y el sondeo RFID', async t => {
+  const p = await pantalla(t, { periodica: false, bateria: () => ({ level: 97, voltage: 4100 }) })
+  assert.equal(p.timers.size, 0)
   await p.click('leer')
   p.avanzar(90000)
   await p.siguiente()
-  assert.equal(p.el('estado').textContent, 'Conectado')
-  assert.equal(p.el('bateria').textContent, 'Batería no disponible')
   assert.deepEqual(p.llamadas, ['batería', 'scan', 'bloque', 'scan', 'bloque'])
+  p.el('periodica').value = 'si'
+  p.el('periodica').onchange()
+  p.avanzar(45000)
+  await p.siguiente()
+  assert.equal(p.llamadas.filter(v => v === 'batería').length, 2)
+})
+
+test('registro acotado y copia sin datos privados durante errores recuperables', async t => {
+  const p = await pantalla(t, { bloque() { throw Object.assign(new Error('trama PRIVADA'), { status: 6 }) } })
+  await p.click('leer')
+  for (let i = 0; i < 90; i++) await p.siguiente()
+  const informe = await p.informe()
+  assert.equal(p.el('registro').textContent.split('\n').length, 256)
+  assert.equal(p.el('estado').textContent, 'Conectado')
+  assert.match(informe, /Fin MF1_READ_ONE_BLOCK \(2008\) · respuesta con estado 6/)
+  assert.doesNotMatch(informe, /privad|ffffffffffff|06NR/i)
 })
