@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camer Codex · Lector A1</title>
+  <link rel="stylesheet" href="/estilo.css">
+  <script src="/sdk.js" defer></script>
+  <script src="/ble.js" defer></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+<main>
+  <header><p>CAMER CODEX® / Laboratorio A1</p><h1>Lector Camer Deck</h1></header>
+  <section aria-labelledby="equipo">
+    <h2 id="equipo">Chameleon Ultra Compact</h2>
+    <p id="estado" role="status">Desconectado</p>
+    <p id="bateria" role="status">Batería no disponible</p>
+    <button id="conectar" disabled>Conectar</button>
+    <button id="desconectar" class="secundario" disabled>Desconectar</button>
+  </section>
+  <section aria-labelledby="tarjeta">
+    <h2 id="tarjeta">Lectura de tarjeta</h2>
+    <p id="lector" role="status">Detenido</p>
+    <button id="leer" disabled>Iniciar lectura continua</button>
+    <p class="etiqueta">Última carta leída</p>
+    <output id="resultado" aria-label="Identificador de tarjeta">—</output>
+    <p>Lecturas aceptadas · <span id="contador">0</span></p>
+  </section>
+  <p id="error" role="alert"></p>
+  <details><summary>Opciones de lectura</summary>
+    <label for="clave">Clave A autorizada · 12 dígitos hexadecimales</label>
+    <input id="clave" type="password" value="FFFFFFFFFFFF" maxlength="12" autocomplete="off" spellcheck="false">
+    <label for="pausa">Pausa entre consultas (ms)</label>
+    <input id="pausa" type="number" min="250" max="400" value="320">
+  </details>
+  <details id="diagnostico"><summary>Diagnóstico</summary>
+    <label for="supervision">Supervisión BLE experimental</label>
+    <select id="supervision" autocomplete="off"><option value="no" selected>Desactivada</option><option value="si">Activada</option></select>
+    <label for="periodica">Actualizar batería periódicamente</label>
+    <select id="periodica"><option value="si">Activado</option><option value="no">Desactivado</option></select>
+    <label for="reutilizar"><input id="reutilizar" type="checkbox"> Usar el último Compact verificado o el único ChameleonUltra autorizado</label>
+    <p id="permisos">Inventario de permisos no disponible.</p>
+    <p id="info"></p>
+    <pre id="resumen"></pre>
+    <pre id="registro" aria-label="Últimos eventos"></pre>
+    <button id="copiar" type="button">Copiar diagnóstico</button>
+    <p id="copia" role="status"></p>
+  </details>
+</main>
+</body>
+</html>

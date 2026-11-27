@@ -1,5 +1,7 @@
 # Camer Codex® — POC Chameleon Ultra
 
+La aplicación de laboratorio A1.1 lee continuamente el bloque 1 mediante BLE y muestra la batería que informa el Compact. [Ejecución en Windows y Android, pruebas y recuperación](docs/A1.md).
+
 El laboratorio estudia si el Chameleon Ultra Compact puede aportar lecturas de cartas a una aplicación POC aislada mediante CamerPacket v1 y BLE. La Entrega C0 constituye el laboratorio documentalmente y queda pendiente de revisión de Coperfil y aprobación del responsable del proyecto.
 
 ## Hardware y evidencia experimental
