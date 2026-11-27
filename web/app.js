@@ -6,6 +6,8 @@ const sdk = globalThis.ChameleonUltraJS
 const bluetooth = navigator.bluetooth
 const disponible = Boolean(globalThis.isSecureContext && bluetooth && sdk?.WebbleAdapter)
 const intervaloBateria = 45000
+const intervaloSupervision = 10000
+const consultaSupervision = 'Supervisión GET_APP_VERSION (1000)'
 let sesion = null
 let aceptadas = 0
 let ultimaSesion
@@ -42,18 +44,21 @@ function evento(s, texto, indicio = false) {
   s.diag.anotar(texto, gatt(s), indicio)
 }
 async function consultar(s, nombre, operacion) {
+  const inicio = performance.now()
+  const latencia = () => nombre === consultaSupervision ? ' · latencia ' + Math.round(performance.now() - inicio) + ' ms' : ''
   s.diag.operacion = nombre
   evento(s, 'Inicio ' + nombre)
   try {
     const valor = await comando(nombre, operacion)
     if (!s.cerrando) s.diag.confirmarRespuesta()
-    evento(s, 'Fin ' + nombre + (s.cerrando ? ' · respuesta descartada' : ' · respuesta válida'))
+    const version = nombre === consultaSupervision && /^\d{1,3}\.\d{1,3}$/.test(valor) ? ' ' + valor : ''
+    evento(s, 'Fin ' + nombre + (s.cerrando ? ' · respuesta descartada' : ' · respuesta válida' + version) + latencia())
     return valor
   } catch (error) {
     const respondio = Number.isInteger(error.status)
     if (respondio && !s.cerrando) s.diag.confirmarRespuesta()
     const resultado = respondio ? 'respuesta con estado ' + error.status : error.timeout ? 'timeout' : 'fallo'
-    evento(s, 'Fin ' + nombre + ' · ' + resultado, error.transporte)
+    evento(s, 'Fin ' + nombre + ' · ' + resultado + latencia(), error.transporte)
     throw error
   }
 }
@@ -78,6 +83,7 @@ async function cerrar(s, mensaje = '', origen = 'usuario') {
   if (origen === 'usuario') evento(s, 'Cierre solicitado por el usuario', true)
   if (origen === 'aplicación') evento(s, 'Cierre iniciado por la aplicación', true)
   s.lista = false
+  el('supervision').value = 'no'
   s.lectura = null
   clearTimeout(s.timer)
   controles()
@@ -122,9 +128,11 @@ async function bateria(s) {
   }
 }
 
-function programar(s, demora) {
+function programar(s) {
   clearTimeout(s.timer)
-  if (s.lista && Number.isFinite(demora)) s.timer = setTimeout(() => ciclo(s), Math.max(0, demora))
+  if (!s.lista || s.ocupado) return
+  const demora = s.lectura?.pausa ?? (Math.min(s.proximaBateria, s.proximaSupervision) - Date.now())
+  if (Number.isFinite(demora)) s.timer = setTimeout(() => ciclo(s), Math.max(0, demora))
 }
 
 async function ciclo(s) {
@@ -138,6 +146,19 @@ async function ciclo(s) {
       await bateria(s)
     }
     vigente(s)
+    if (Date.now() >= s.proximaSupervision) {
+      try {
+        await s.consultar(consultaSupervision, () => s.ultra.cmdGetAppVersion())
+      } catch (error) {
+        if (error.transporte) throw error
+        vigente(s)
+        el('supervision').value = 'no'
+        evento(s, 'Supervisión desactivada por error de comando')
+        s.diag.supervision = 'desactivada por error de comando'
+      }
+      vigente(s)
+      s.proximaSupervision = el('supervision').value === 'si' ? Date.now() + intervaloSupervision : Infinity
+    }
     const lectura = s.lectura
     if (!lectura) return
     const comprobar = () => {
@@ -173,7 +194,7 @@ async function ciclo(s) {
     if (error.transporte) await cerrar(s, error.message + ' Volvé a conectar.', 'aplicación')
   } finally {
     s.ocupado = false
-    programar(s, s.lectura?.pausa ?? (s.proximaBateria - Date.now()))
+    programar(s)
   }
 }
 
@@ -183,7 +204,19 @@ el('periodica').onchange = () => {
   evento(s, 'Batería periódica ' + (periodica() ? 'activada' : 'desactivada'))
   if (!s.lista || !s.admiteBateria) return
   s.proximaBateria = periodica() ? Date.now() + intervaloBateria : Infinity
-  if (!s.ocupado && !s.lectura) programar(s, s.proximaBateria - Date.now())
+  if (!s.lectura) programar(s)
+}
+
+function configurarSupervision(s) {
+  const activa = el('supervision').value === 'si'
+  s.diag.supervision = activa ? 'activada · 10 s' : 'desactivada'
+  s.proximaSupervision = activa ? Date.now() + intervaloSupervision : Infinity
+  evento(s, 'Supervisión BLE experimental ' + s.diag.supervision)
+}
+el('supervision').onchange = () => {
+  if (!sesion?.lista) return
+  configurarSupervision(sesion)
+  if (!sesion.lectura) programar(sesion)
 }
 
 el('conectar').onclick = async () => {
@@ -253,6 +286,7 @@ el('conectar').onclick = async () => {
     evento(s, 'Suspensión configurada · ' + suspension)
     s.admiteBateria = capacidades.has(1025)
     s.proximaBateria = s.admiteBateria ? 0 : Infinity
+    configurarSupervision(s)
     s.lista = true
     el('estado').textContent = 'Conectado'
     el('lector').textContent = 'Listo'
@@ -270,7 +304,7 @@ el('leer').onclick = () => {
     s.lectura = null
     el('lector').textContent = 'Detenido'
     el('error').textContent = ''
-    programar(s, s.proximaBateria - Date.now())
+    programar(s)
   } else {
     if (!/^[0-9a-fA-F]{12}$/.test(el('clave').value)) {
       el('error').textContent = 'Ingresá los 12 dígitos hexadecimales de la clave A.'

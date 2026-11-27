@@ -11,6 +11,7 @@ export class Diagnostico {
   operacion = 'Ninguna'
   primerIndicio = ''
   suspension = 'no disponible'
+  supervision = 'pendiente'
   bateria = 'Batería no disponible'
 
   get eventos() {
@@ -39,6 +40,7 @@ export class Diagnostico {
       'Última respuesta válida · ' + (this.horaRespuesta || 'sin dato'),
       'Desde la última respuesta válida · ' + intervalo(this.respuesta),
       'Última operación · ' + this.operacion,
+      'Supervisión BLE experimental · ' + this.supervision,
       this.bateria + ' · periódica ' + (periodica ? 'activada' : 'desactivada'),
       'Suspensión configurada · ' + this.suspension,
       'Primer indicio observable · ' + (this.primerIndicio || 'ninguno'),

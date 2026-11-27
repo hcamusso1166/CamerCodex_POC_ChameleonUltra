@@ -99,10 +99,15 @@ async function pantalla(t, opciones = {}) {
   assert.equal(el('leer').disabled, true)
   const click = id => el(id).onclick()
   if (opciones.periodica === false) el('periodica').value = 'no'
+  if (opciones.supervision) el('supervision').value = 'si'
   await click('conectar')
   if (!opciones.falloInicial) assert.equal(el('estado').textContent, 'Conectado')
   assert.match(el('info').textContent, /8 s/)
   return { el, click, llamadas, timers, device, get solicitudes() { return solicitudes },
+    supervision(activa) {
+      el('supervision').value = activa ? 'si' : 'no'
+      el('supervision').onchange()
+    },
     async informe() { await click('copiar'); return copiado }, get ultra() { return ultra },
     avanzar: ms => { reloj += ms },
     async siguiente() {
@@ -112,6 +117,70 @@ async function pantalla(t, opciones = {}) {
       reloj += ms
       await fn()
     } }
+}
+
+test('ensayo A/B en reposo: 180 s simulados y cancelación', async t => {
+  const p = await pantalla(t, { periodica: false, bateria: () => ({ level: 97, voltage: 4120 }) })
+  assert.equal(p.timers.size, 0)
+  assert.match(await p.informe(), /Supervisión BLE experimental · desactivada/)
+  p.ultra.cmdGetAppVersion = async () => { p.llamadas.push('versión'); return '2.1' }
+  p.supervision(true)
+  for (let i = 0; i < 18; i++) {
+    assert.equal([...p.timers.values()][0].ms, 10000)
+    await p.siguiente()
+  }
+  assert.deepEqual(p.llamadas, ['batería', ...Array(18).fill('versión')])
+  assert.match(await p.informe(), /Inicio Supervisión GET_APP_VERSION \(1000\)[^\n]*\n[^\n]*respuesta válida 2.1 · latencia \d+ ms/)
+  p.supervision(false)
+  assert.equal(p.timers.size, 0)
+})
+
+test('una supervisión pendiente serializa batería y RFID aunque se desactive', async t => {
+  const p = await pantalla(t, { supervision: true, bateria: () => ({ level: 97, voltage: 4120 }) })
+  const espera = pendiente()
+  p.ultra.cmdGetAppVersion = () => { p.llamadas.push('versión'); return espera.promesa }
+  const ciclo = p.siguiente()
+  p.avanzar(46000)
+  await p.click('leer')
+  p.supervision(false)
+  assert.deepEqual(p.llamadas, ['batería', 'versión'])
+  assert.equal(p.timers.size, 0)
+  espera.resolver('2.1')
+  await ciclo
+  assert.deepEqual(p.llamadas, ['batería', 'versión', 'scan', 'bloque'])
+  assert.equal([...p.timers.values()][0].ms, 320)
+  await p.siguiente()
+  assert.deepEqual(p.llamadas.slice(-3), ['batería', 'scan', 'bloque'])
+})
+
+test('cierre durante supervisión descarta respuesta tardía y cancela comandos', async t => {
+  const p = await pantalla(t, { supervision: true })
+  const espera = pendiente()
+  p.ultra.cmdGetAppVersion = () => espera.promesa
+  const ciclo = p.siguiente()
+  await p.click('leer')
+  await p.click('desconectar')
+  espera.resolver('2.1')
+  await ciclo
+  assert.deepEqual(p.llamadas, [])
+  assert.match(await p.informe(), /respuesta descartada · latencia/)
+  assert.equal(p.timers.size, 0)
+  await p.click('conectar')
+  assert.equal(p.timers.size, 0)
+})
+
+for (const timeout of [false, true]) {
+  test('fallo de supervisión · ' + (timeout ? 'timeout' : 'rechazo del comando'), async t => {
+    const p = await pantalla(t, { supervision: true })
+    p.ultra.cmdGetAppVersion = async () => {
+      if (timeout) throw new Error('read resp timeout')
+      throw Object.assign(new Error(), { status: 0x67 })
+    }
+    await p.siguiente()
+    assert.equal(p.timers.size, 0)
+    assert.equal(p.el('estado').textContent, timeout ? 'Error · desconectado' : 'Conectado')
+    assert.match(await p.informe(), timeout ? /timeout · latencia/ : /desactivada por error de comando/)
+  })
 }
 
 test('ausencias repetidas por estado RF y lista vacía, seguidas de tres cartas', async t => {
